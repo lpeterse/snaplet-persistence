@@ -14,6 +14,7 @@ module Snap.Snaplet.Persistence
        , persist
        , persistSTM
        , restore
+       , restoreLatest
        )
        where
 
@@ -305,17 +306,17 @@ restore h
       = joinI $ (enumLines ><> mapStream (Atto.parseOnly parseEvent)) (Data.Iteratee.mapM_ replay) 
     replay    :: Either String RawEvent -> Handler a b () 
     replay (Left s)
-      = return ()
+      = fail $ "nerd" ++ s
     replay (Right ev)
       = do setTimeout <- getTimeoutAction
            liftIO $ setTimeout 1
            case ev of
              (Json n t j)    -> case Aeson.parse parseAeson (j :: Aeson.Value) of
-                                  (Aeson.Error e)   -> return ()
+                                  (Aeson.Error e)   -> fail $ "huhu" ++ e
                                   (Aeson.Success v) -> replayEvent v
-             (Invalid n t b) -> return ()
-             (Comment t)     -> return ()
-             (Garbage b)     -> return ()
+             x@(Invalid n t b) -> fail (show x)
+             x@(Comment t)     -> fail (show x)
+             x@(Garbage b)     -> fail (show x)
     parseEvent     :: Parser RawEvent
     parseEvent
       = AttoC.choice
@@ -335,6 +336,13 @@ restore h
                Comment <$> T.decodeUtf8 <$> AttoC.takeByteString
           , do Garbage <$> AttoC.takeByteString 
           ]
+
+restoreLatest :: (HasPersistence b) => Handler a b ()
+restoreLatest
+  = do mh <- with' persistenceLens latestLogfile
+       case mh of
+         Just h  -> restore h
+         Nothing -> return ()
 
 -- standalone handlers
 ----------------------
